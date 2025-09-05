@@ -1,0 +1,7 @@
+# GitHub API 配置
+GITHUB_TOKEN=your_github_personal_access_token_here
+
+# Cloudflare API 配置
+CLOUDFLARE_API_TOKEN=your_cloudflare_api_token_here
+CLOUDFLARE_ACCOUNT_ID=your_cloudflare_account_id_here
+D1_DATABASE_ID=your_d1_database_id_here
