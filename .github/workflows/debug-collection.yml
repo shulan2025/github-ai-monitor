@@ -1,0 +1,116 @@
+name: Debug AI Repository Collection
+
+on:
+  workflow_dispatch:  # 只支持手动触发
+    inputs:
+      test_mode:
+        description: '是否启用测试模式'
+        required: false
+        default: 'true'
+        type: boolean
+      limit:
+        description: '测试模式下的采集数量限制'
+        required: false
+        default: '5'
+        type: string
+
+env:
+  PYTHON_VERSION: '3.9'
+
+jobs:
+  debug:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+        
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        
+    - name: List files
+      run: |
+        echo "📁 当前目录文件列表:"
+        ls -la
+        echo "📁 Python文件列表:"
+        ls -la *.py
+        
+    - name: Test configuration
+      env:
+        GITHUB_TOKEN: ${{ secrets.API_TOKEN }}
+        CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        D1_DATABASE_ID: ${{ secrets.D1_DATABASE_ID }}
+        EMAIL_HOST: ${{ secrets.EMAIL_HOST }}
+        EMAIL_PORT: ${{ secrets.EMAIL_PORT }}
+        EMAIL_USER: ${{ secrets.EMAIL_USER }}
+        EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
+        EMAIL_TO: ${{ secrets.EMAIL_TO }}
+      run: |
+        echo "�� 测试配置..."
+        python3 test_config.py
+        
+    - name: Test simple collection
+      env:
+        GITHUB_TOKEN: ${{ secrets.API_TOKEN }}
+        CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        D1_DATABASE_ID: ${{ secrets.D1_DATABASE_ID }}
+        EMAIL_HOST: ${{ secrets.EMAIL_HOST }}
+        EMAIL_PORT: ${{ secrets.EMAIL_PORT }}
+        EMAIL_USER: ${{ secrets.EMAIL_USER }}
+        EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
+        EMAIL_TO: ${{ secrets.EMAIL_TO }}
+        TEST_MODE: ${{ inputs.test_mode }}
+        TEST_LIMIT: ${{ inputs.limit }}
+      run: |
+        echo "🚀 开始简单测试..."
+        echo "测试模式: ${{ inputs.test_mode }}"
+        echo "限制数量: ${{ inputs.limit }}"
+        
+        # 先测试基本功能
+        python3 -c "
+        import sys
+        print('Python版本:', sys.version)
+        print('✅ Python环境正常')
+        "
+        
+        # 测试导入
+        python3 -c "
+        try:
+            from config_v2 import Config
+            print('✅ 配置模块导入成功')
+        except Exception as e:
+            print('❌ 配置模块导入失败:', e)
+            sys.exit(1)
+        "
+        
+        # 测试数据库连接
+        python3 -c "
+        try:
+            from simple_db_check import check_database
+            check_database()
+            print('✅ 数据库连接测试成功')
+        except Exception as e:
+            print('❌ 数据库连接测试失败:', e)
+            sys.exit(1)
+        "
+        
+        echo "✅ 所有基础测试通过"
+        
+    - name: Upload debug logs
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: debug-logs-${{ github.run_number }}
+        path: |
+          *.log
+          debug.log
+        retention-days: 1
