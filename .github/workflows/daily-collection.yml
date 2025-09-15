@@ -2,23 +2,20 @@ name: Daily AI Repository Collection
 
 on:
   schedule:
-    # 每天 UTC 00:00 运行 (北京时间 08:00)
-    - cron: '0 0 * * *'
-  workflow_dispatch:  # 支持手动触发
+    # 每天北京时间上午10点运行 (UTC 2:00)
+    - cron: '0 2 * * *'
+  workflow_dispatch:
     inputs:
       test_mode:
-        description: '是否启用测试模式'
+        description: 'Test mode (limited data collection)'
         required: false
         default: 'false'
         type: boolean
       limit:
-        description: '测试模式下的采集数量限制'
+        description: 'Limit number of repositories (test mode only)'
         required: false
         default: '100'
         type: string
-
-env:
-  PYTHON_VERSION: '3.9'
 
 jobs:
   collect:
@@ -31,7 +28,7 @@ jobs:
     - name: Set up Python
       uses: actions/setup-python@v4
       with:
-        python-version: ${{ env.PYTHON_VERSION }}
+        python-version: '3.9'
         
     - name: Cache pip dependencies
       uses: actions/cache@v3
@@ -60,6 +57,11 @@ jobs:
       run: |
         echo "�� 测试配置..."
         python3 test_config.py
+        
+    - name: Test keyword configuration
+      run: |
+        echo "🔍 测试关键词配置..."
+        python3 test_keywords.py
         
     - name: Run data collection
       env:
@@ -91,38 +93,46 @@ jobs:
         D1_DATABASE_ID: ${{ secrets.D1_DATABASE_ID }}
       run: |
         echo "📊 检查数据库状态..."
-        python3 simple_db_check.py
+        python3 -c "
+        import os
+        from cloudflare import Cloudflare
+        
+        cf = Cloudflare(token=os.environ['CLOUDFLARE_API_TOKEN'])
+        
+        try:
+            result = cf.d1.execute(
+                account_id=os.environ['CLOUDFLARE_ACCOUNT_ID'],
+                database_id=os.environ['D1_DATABASE_ID'],
+                sql='SELECT COUNT(*) as total FROM github_ai_post_attr'
+            )
+            
+            if result.success and result.result:
+                total = result.result[0].results[0]['total']
+                print(f'✅ 数据库总记录数: {total}')
+            else:
+                print('❌ 数据库查询失败')
+        except Exception as e:
+            print(f'❌ 数据库检查失败: {e}')
+        "
         
     - name: Upload logs
-      if: always()
       uses: actions/upload-artifact@v4
+      if: always()
       with:
-        name: collection-logs-${{ github.run_number }}
+        name: collection-logs
         path: |
-          collection.log
           *.log
+          logs/
         retention-days: 7
         
     - name: Send success notification
       if: success()
-      env:
-        EMAIL_HOST: ${{ secrets.EMAIL_HOST }}
-        EMAIL_PORT: ${{ secrets.EMAIL_PORT }}
-        EMAIL_USER: ${{ secrets.EMAIL_USER }}
-        EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
-        EMAIL_TO: ${{ secrets.EMAIL_TO }}
       run: |
-        echo "✅ 采集任务完成，发送成功通知..."
+        echo "✅ 采集任务成功完成，发送成功通知..."
         python3 email_notifier.py success
         
     - name: Send failure notification
       if: failure()
-      env:
-        EMAIL_HOST: ${{ secrets.EMAIL_HOST }}
-        EMAIL_PORT: ${{ secrets.EMAIL_PORT }}
-        EMAIL_USER: ${{ secrets.EMAIL_USER }}
-        EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
-        EMAIL_TO: ${{ secrets.EMAIL_TO }}
       run: |
         echo "❌ 采集任务失败，发送错误通知..."
         python3 email_notifier.py failure
