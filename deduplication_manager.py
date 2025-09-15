@@ -54,25 +54,42 @@ class DeduplicationManager:
                 params=[repo_id]
             )
             
-            if response.success and response.result and response.result[0].results:
-                results = response.result[0].results
-                if results and len(results) > 0:
-                    row = results[0]
-                    # 修复: 确保映射正确且值不为字段名
-                    if len(row) >= 4:
-                        record = {
-                            'id': row[0],
-                            'forks_count': row[1], 
-                            'collection_time': row[2],
-                            'collection_hash': row[3]
-                        }
-                        
-                        # 关键修复: 检查collection_time是否为字段名
-                        if record['collection_time'] == 'collection_time':
-                            self.logger.warning(f"检测到字段名作为值的问题，记录ID: {repo_id}")
-                            record['collection_time'] = None
-                            
-                        return record
+            # 更安全的D1 API响应解析
+            if response.success:
+                # 检查响应结构
+                if hasattr(response, 'result') and response.result:
+                    if isinstance(response.result, list) and len(response.result) > 0:
+                        first_result = response.result[0]
+                        if hasattr(first_result, 'results') and first_result.results:
+                            results = first_result.results
+                            if isinstance(results, list) and len(results) > 0:
+                                row = results[0]
+                                if isinstance(row, list) and len(row) >= 4:
+                                    record = {
+                                        'id': row[0],
+                                        'forks_count': row[1], 
+                                        'collection_time': row[2],
+                                        'collection_hash': row[3]
+                                    }
+                                    
+                                    # 检查collection_time是否为字段名
+                                    if record['collection_time'] == 'collection_time':
+                                        self.logger.warning(f"检测到字段名作为值的问题，记录ID: {repo_id}")
+                                        record['collection_time'] = None
+                                        
+                                    return record
+                                else:
+                                    self.logger.debug(f"查询结果行数据格式异常: {row}")
+                            else:
+                                self.logger.debug(f"查询结果为空，记录ID: {repo_id}")
+                        else:
+                            self.logger.debug(f"查询结果结构异常，记录ID: {repo_id}")
+                    else:
+                        self.logger.debug(f"查询结果列表为空，记录ID: {repo_id}")
+                else:
+                    self.logger.debug(f"查询响应无result字段，记录ID: {repo_id}")
+            else:
+                self.logger.warning(f"查询失败，记录ID: {repo_id}, 错误: {getattr(response, 'errors', 'Unknown error')}")
             
             return None
             
@@ -209,10 +226,15 @@ class DeduplicationManager:
             )
             
             total_count = 0
-            if total_response.success and total_response.result:
-                results = total_response.result[0].results
-                if results and len(results) > 0:
-                    total_count = results[0][0] if results[0] else 0
+            if total_response.success and hasattr(total_response, 'result') and total_response.result:
+                if isinstance(total_response.result, list) and len(total_response.result) > 0:
+                    first_result = total_response.result[0]
+                    if hasattr(first_result, 'results') and first_result.results:
+                        results = first_result.results
+                        if isinstance(results, list) and len(results) > 0:
+                            row = results[0]
+                            if isinstance(row, list) and len(row) > 0:
+                                total_count = row[0] if row[0] is not None else 0
             
             # 查询最近7天的更新数
             recent_response = self.cloudflare_client.d1.database.query(
@@ -226,10 +248,15 @@ class DeduplicationManager:
             )
             
             recent_count = 0
-            if recent_response.success and recent_response.result:
-                results = recent_response.result[0].results
-                if results and len(results) > 0:
-                    recent_count = results[0][0] if results[0] else 0
+            if recent_response.success and hasattr(recent_response, 'result') and recent_response.result:
+                if isinstance(recent_response.result, list) and len(recent_response.result) > 0:
+                    first_result = recent_response.result[0]
+                    if hasattr(first_result, 'results') and first_result.results:
+                        results = first_result.results
+                        if isinstance(results, list) and len(results) > 0:
+                            row = results[0]
+                            if isinstance(row, list) and len(row) > 0:
+                                recent_count = row[0] if row[0] is not None else 0
             
             # 查询有fork增长的项目数
             growth_response = self.cloudflare_client.d1.database.query(
@@ -243,10 +270,15 @@ class DeduplicationManager:
             )
             
             growth_count = 0
-            if growth_response.success and growth_response.result:
-                results = growth_response.result[0].results
-                if results and len(results) > 0:
-                    growth_count = results[0][0] if results[0] else 0
+            if growth_response.success and hasattr(growth_response, 'result') and growth_response.result:
+                if isinstance(growth_response.result, list) and len(growth_response.result) > 0:
+                    first_result = growth_response.result[0]
+                    if hasattr(first_result, 'results') and first_result.results:
+                        results = first_result.results
+                        if isinstance(results, list) and len(results) > 0:
+                            row = results[0]
+                            if isinstance(row, list) and len(row) > 0:
+                                growth_count = row[0] if row[0] is not None else 0
             
             return {
                 "total_projects": total_count,
