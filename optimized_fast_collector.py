@@ -197,12 +197,14 @@ class OptimizedHighFrequencyCollector:
             
             params = [
                 repo.id, repo.full_name, repo.name, repo.owner,
-                repo.description, repo.url, repo.stargazers_count,
+                repo.description or '', repo.url, repo.stargazers_count,
                 repo.forks_count, repo.watchers_count, repo.created_at,
-                repo.updated_at, repo.pushed_at, repo.language,
-                repo.topics, repo.ai_category, repo.ai_tags,
+                repo.updated_at, repo.pushed_at, repo.language or '',
+                ','.join(repo.topics) if repo.topics else '',  # 序列化topics
+                repo.ai_category or '', 
+                ','.join(repo.ai_tags) if repo.ai_tags else '',  # 序列化ai_tags
                 repo.quality_score, repo.trending_score, 1,  # collection_round
-                repo.last_fork_count, repo.fork_growth, repo.collection_hash,
+                repo.last_fork_count, repo.fork_growth, repo.collection_hash or '',
                 current_time  # collection_time
             ]
             
