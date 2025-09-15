@@ -191,6 +191,10 @@ class OptimizedHighFrequencyCollector:
         """存储单个仓库到数据库"""
         try:
             # 准备数据
+            from datetime import datetime, timezone, timedelta
+            beijing_tz = timezone(timedelta(hours=8))
+            current_time = datetime.now(beijing_tz).strftime('%Y-%m-%d %H:%M:%S')
+            
             params = [
                 repo.id, repo.full_name, repo.name, repo.owner,
                 repo.description, repo.url, repo.stargazers_count,
@@ -198,7 +202,8 @@ class OptimizedHighFrequencyCollector:
                 repo.updated_at, repo.pushed_at, repo.language,
                 repo.topics, repo.ai_category, repo.ai_tags,
                 repo.quality_score, repo.trending_score, 1,  # collection_round
-                repo.last_fork_count, repo.fork_growth, repo.collection_hash
+                repo.last_fork_count, repo.fork_growth, repo.collection_hash,
+                current_time  # collection_time
             ]
             
             # 执行插入/更新
