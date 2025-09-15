@@ -152,7 +152,7 @@ class DatabaseConfig:
     
     # 查询已存在记录的SQL
     SELECT_EXISTING_SQL = f"""
-    SELECT id, forks_count, last_collected_at, collection_hash
+    SELECT id, forks_count, collection_time, collection_hash
     FROM {TABLE_NAME}
     WHERE id = ?
     """

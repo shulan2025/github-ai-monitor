@@ -63,14 +63,14 @@ class DeduplicationManager:
                         record = {
                             'id': row[0],
                             'forks_count': row[1], 
-                            'last_collected_at': row[2],
+                            'collection_time': row[2],
                             'collection_hash': row[3]
                         }
                         
-                        # 关键修复: 检查last_collected_at是否为字段名
-                        if record['last_collected_at'] == 'last_collected_at':
+                        # 关键修复: 检查collection_time是否为字段名
+                        if record['collection_time'] == 'collection_time':
                             self.logger.warning(f"检测到字段名作为值的问题，记录ID: {repo_id}")
-                            record['last_collected_at'] = None
+                            record['collection_time'] = None
                             
                         return record
             
@@ -89,7 +89,7 @@ class DeduplicationManager:
         try:
             current_forks = repo.forks_count
             last_forks = existing_record.get('forks_count', 0)
-            last_collected_str = existing_record.get('last_collected_at')
+            last_collected_str = existing_record.get('collection_time')
             
             # 确保数据类型正确
             try:
@@ -221,7 +221,7 @@ class DeduplicationManager:
                 sql="""
                 SELECT COUNT(*) as recent 
                 FROM github_ai_post_attr 
-                WHERE last_collected_at >= datetime('now', '-7 days')
+                WHERE collection_time >= datetime('now', '-7 days')
                 """
             )
             
@@ -238,7 +238,7 @@ class DeduplicationManager:
                 sql="""
                 SELECT COUNT(*) as growth 
                 FROM github_ai_post_attr 
-                WHERE fork_growth > 0 AND last_collected_at >= datetime('now', '-7 days')
+                WHERE fork_growth > 0 AND collection_time >= datetime('now', '-7 days')
                 """
             )
             
