@@ -25,7 +25,7 @@ class DeduplicationManager:
     
     async def should_store_repository(self, repo: RepositoryData) -> Tuple[bool, str]:
         """
-        判断是否应该存储仓库 - 优化为只存储新仓库
+        判断是否应该存储仓库 - 优先存储新仓库和最近更新的仓库
         返回: (是否存储, 原因说明)
         """
         try:
@@ -36,13 +36,18 @@ class DeduplicationManager:
                 # 新项目直接收录
                 return True, "新项目"
             
-            # 只存储新仓库，不更新现有记录
-            return False, "仓库已存在，跳过存储"
+            # 检查是否有重要更新（星标、fork、描述等变化）
+            has_significant_update = await self.check_significant_update(repo, existing_record)
+            
+            if has_significant_update:
+                return True, "仓库有重要更新"
+            else:
+                return False, "仓库无重要更新，跳过存储"
             
         except Exception as e:
             self.logger.error(f"去重检查失败: {repo.full_name} | {e}")
-            # 出错时默认不存储，避免重复数据
-            return False, f"去重检查异常，跳过存储: {e}"
+            # 出错时默认存储，确保数据完整性
+            return True, f"去重检查异常，强制存储: {e}"
     
     async def get_existing_record(self, repo_id: str) -> Optional[Dict[str, Any]]:
         """获取已存在的仓库记录"""
@@ -96,6 +101,50 @@ class DeduplicationManager:
         except Exception as e:
             self.logger.error(f"查询已存在记录失败: {repo_id} | {e}")
             return None
+    
+    async def check_significant_update(self, repo: RepositoryData, 
+                                     existing_record: Dict[str, Any]) -> bool:
+        """
+        检查仓库是否有重要更新
+        返回: 是否有重要更新
+        """
+        try:
+            # 检查星标数变化
+            current_stars = repo.stargazers_count
+            last_stars = existing_record.get('stargazers_count', 0)
+            stars_growth = current_stars - last_stars
+            
+            # 检查fork数变化
+            current_forks = repo.forks_count
+            last_forks = existing_record.get('forks_count', 0)
+            forks_growth = current_forks - last_forks
+            
+            # 检查描述变化
+            current_desc = repo.description or ""
+            last_desc = existing_record.get('description', "") or ""
+            desc_changed = current_desc != last_desc
+            
+            # 重要更新条件
+            significant_update = (
+                stars_growth >= 10 or  # 星标增长10个以上
+                forks_growth >= 5 or   # fork增长5个以上
+                desc_changed or        # 描述有变化
+                stars_growth >= 5 and current_stars >= 100  # 星标增长5个以上且总数>=100
+            )
+            
+            if significant_update:
+                self.logger.info(
+                    f"仓库有重要更新: {repo.full_name} | "
+                    f"星标: {last_stars}→{current_stars}(+{stars_growth}) | "
+                    f"Fork: {last_forks}→{current_forks}(+{forks_growth}) | "
+                    f"描述变化: {desc_changed}"
+                )
+            
+            return significant_update
+            
+        except Exception as e:
+            self.logger.error(f"检查重要更新失败: {repo.full_name} | {e}")
+            return True  # 出错时默认认为有更新
     
     async def check_deduplication_rules(self, repo: RepositoryData, 
                                       existing_record: Dict[str, Any]) -> Tuple[bool, str]:

@@ -108,19 +108,19 @@ class OptimizedHighFrequencyCollector:
         
         for keyword in keywords:
             try:
-                # 动态时间过滤器 - 优先发现新仓库
+                # 动态时间过滤器 - 优先发现最近更新的仓库
                 from datetime import datetime, timedelta
-                # 主要搜索最近30天的新仓库
-                recent_filter = "created:>" + (datetime.now() - timedelta(days=30)).strftime('%Y-%m-%d')
-                # 辅助搜索最近90天的仓库
-                extended_filter = "created:>" + (datetime.now() - timedelta(days=90)).strftime('%Y-%m-%d')
+                # 主要搜索最近30天有更新的仓库（包括新创建和更新的）
+                recent_updated_filter = "updated:>" + (datetime.now() - timedelta(days=30)).strftime('%Y-%m-%d')
+                # 辅助搜索最近90天有更新的仓库
+                extended_updated_filter = "updated:>" + (datetime.now() - timedelta(days=90)).strftime('%Y-%m-%d')
                 
-                # 优先搜索最近30天的新仓库
-                query = f"{keyword} {recent_filter} stars:>={self.config.MIN_STARS}"
+                # 优先搜索最近30天有更新的仓库
+                query = f"{keyword} {recent_updated_filter} stars:>={self.config.MIN_STARS}"
                 
                 params = {
                     "q": query,
-                    "sort": "created",  # 按创建时间排序，优先新仓库
+                    "sort": "updated",  # 按更新时间排序，优先最近更新的仓库
                     "order": "desc",
                     "per_page": min(100, per_keyword)
                 }
@@ -138,10 +138,10 @@ class OptimizedHighFrequencyCollector:
                         # 如果最近30天结果不足，搜索最近90天
                         if len(items) < per_keyword * 0.5:  # 如果结果少于预期的一半
                             self.logger.info(f"🔍 {keyword} 最近30天结果不足，搜索最近90天")
-                            extended_query = f"{keyword} {extended_filter} stars:>={self.config.MIN_STARS}"
+                            extended_query = f"{keyword} {extended_updated_filter} stars:>={self.config.MIN_STARS}"
                             extended_params = {
                                 "q": extended_query,
-                                "sort": "created",
+                                "sort": "updated",
                                 "order": "desc", 
                                 "per_page": min(100, per_keyword - len(items))
                             }
@@ -200,6 +200,9 @@ class OptimizedHighFrequencyCollector:
                             if "新项目" in reason:
                                 stats["new"] += 1
                                 self.logger.info(f"✅ 新增仓库: {repo.full_name}")
+                            elif "重要更新" in reason:
+                                stats["updated"] += 1
+                                self.logger.info(f"🔄 更新仓库: {repo.full_name}")
                             else:
                                 stats["updated"] += 1
                         else:
@@ -277,13 +280,14 @@ class OptimizedHighFrequencyCollector:
             duration = (end_time - start_time).total_seconds() / 60
             
             self.logger.info("\n" + "="*50)
-            self.logger.info("✅ 新仓库发现采集完成!")
+            self.logger.info("✅ 最近更新仓库采集完成!")
             self.logger.info("="*50)
             self.logger.info(f"📊 总搜索数量: {len(processed_repos)}")
             self.logger.info(f"🆕 新增仓库: {stats['new']}")
             self.logger.info(f"🔄 更新仓库: {stats['updated']}")
             self.logger.info(f"⏭️ 跳过仓库: {stats['skipped']}")
             self.logger.info(f"📈 新增率: {stats['new']/stats['total_processed']*100:.1f}%")
+            self.logger.info(f"📈 更新率: {stats['updated']/stats['total_processed']*100:.1f}%")
             self.logger.info(f"⏱️ 采集耗时: {duration:.1f}分钟")
             self.logger.info(f"🚀 平均速度: {len(processed_repos)/duration:.1f}项/分钟")
             
