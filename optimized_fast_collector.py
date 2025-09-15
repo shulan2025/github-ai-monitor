@@ -122,7 +122,7 @@ class OptimizedHighFrequencyCollector:
                 
                 from config_v2 import APIConfig
                 async with self.session.get(
-                    f"{APIConfig.GITHUB_API_BASE}{APIConfig.GITHUB_SEARCH_ENDPOINT}",
+                    APIConfig.GITHUB_SEARCH_ENDPOINT,
                     params=params
                 ) as response:
                     if response.status == 200:
