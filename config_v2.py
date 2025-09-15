@@ -114,6 +114,48 @@ class DatabaseConfig:
     
     # 统计SQL
     COUNT_SQL = f"SELECT COUNT(*) as total FROM {TABLE_NAME}"
+    
+    # UPSERT SQL (插入或更新)
+    UPSERT_SQL = f"""
+    INSERT INTO {TABLE_NAME} (
+        id, full_name, name, owner, description, url,
+        stargazers_count, forks_count, watchers_count,
+        created_at, updated_at, pushed_at, language,
+        topics, ai_category, ai_tags, quality_score,
+        trending_score, collection_round, last_fork_count,
+        fork_growth, collection_hash, collection_time
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET
+        full_name = excluded.full_name,
+        name = excluded.name,
+        owner = excluded.owner,
+        description = excluded.description,
+        url = excluded.url,
+        stargazers_count = excluded.stargazers_count,
+        forks_count = excluded.forks_count,
+        watchers_count = excluded.watchers_count,
+        created_at = excluded.created_at,
+        updated_at = excluded.updated_at,
+        pushed_at = excluded.pushed_at,
+        language = excluded.language,
+        topics = excluded.topics,
+        ai_category = excluded.ai_category,
+        ai_tags = excluded.ai_tags,
+        quality_score = excluded.quality_score,
+        trending_score = excluded.trending_score,
+        collection_round = excluded.collection_round,
+        last_fork_count = excluded.last_fork_count,
+        fork_growth = excluded.fork_growth,
+        collection_hash = excluded.collection_hash,
+        collection_time = excluded.collection_time
+    """
+    
+    # 查询已存在记录的SQL
+    SELECT_EXISTING_SQL = f"""
+    SELECT id, forks_count, last_collected_at, collection_hash
+    FROM {TABLE_NAME}
+    WHERE id = ?
+    """
 
 class EmailConfig:
     """邮件配置类"""
