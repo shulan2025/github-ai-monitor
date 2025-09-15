@@ -20,7 +20,7 @@ class EnhancedDataProcessorV2(DataProcessor):
     def __init__(self):
         super().__init__()
         self.session = None
-        self.config = Config()
+        # 使用父类的config，确保配置一致
         self.logger = logging.getLogger('enhanced_processor_v2')
         
     async def initialize_session(self):

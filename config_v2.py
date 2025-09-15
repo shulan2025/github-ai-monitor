@@ -43,6 +43,10 @@ class Config:
     LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO")
     LOG_FILE = os.environ.get("LOG_FILE", "collection.log")
     
+    # 质量配置
+    MIN_QUALITY_SCORE = int(os.environ.get("MIN_QUALITY_SCORE", "30"))        # 最小质量分数
+    MIN_AI_RELEVANCE_SCORE = int(os.environ.get("MIN_AI_RELEVANCE_SCORE", "2")) # 最小AI相关性分数
+    
     # 开发配置
     DEBUG_MODE = os.environ.get("DEBUG_MODE", "false").lower() == "true"
     VERBOSE_LOGGING = os.environ.get("VERBOSE_LOGGING", "false").lower() == "true"
@@ -166,7 +170,7 @@ def validate_config() -> bool:
             return False
     
     print("✅ 配置验证通过")
-    return True
+        return True
 
 if __name__ == "__main__":
     # 测试配置
