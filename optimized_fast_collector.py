@@ -99,6 +99,13 @@ class OptimizedHighFrequencyCollector:
         final_repos = list(unique_repos.values())
         self.logger.info(f"🏁 搜索完成: 共 {len(final_repos)} 个去重后的仓库")
         
+        # 如果搜索结果太少，使用备用搜索策略
+        if len(final_repos) < 50:
+            self.logger.warning(f"⚠️ 搜索结果太少({len(final_repos)}个)，启用备用搜索策略")
+            backup_repos = await self._backup_search_strategy()
+            final_repos.extend(backup_repos)
+            self.logger.info(f"🔄 备用搜索获得 {len(backup_repos)} 个仓库，总计 {len(final_repos)} 个")
+        
         return final_repos
     
     async def _search_round(self, keywords: List[str], target_count: int) -> List[Dict[str, Any]]:
@@ -108,15 +115,18 @@ class OptimizedHighFrequencyCollector:
         
         for keyword in keywords:
             try:
-                # 动态时间过滤器 - 优先发现最近更新的仓库
+                # 动态时间过滤器 - 分层搜索策略
                 from datetime import datetime, timedelta
-                # 主要搜索最近30天有更新的仓库（包括新创建和更新的）
+                # 第一层：搜索最近30天有更新的仓库
                 recent_updated_filter = "updated:>" + (datetime.now() - timedelta(days=30)).strftime('%Y-%m-%d')
-                # 辅助搜索最近90天有更新的仓库
+                # 第二层：搜索最近90天有更新的仓库
                 extended_updated_filter = "updated:>" + (datetime.now() - timedelta(days=90)).strftime('%Y-%m-%d')
+                # 第三层：搜索最近1年有更新的仓库
+                fallback_updated_filter = "updated:>" + (datetime.now() - timedelta(days=365)).strftime('%Y-%m-%d')
                 
-                # 优先搜索最近30天有更新的仓库
-                query = f"{keyword} {recent_updated_filter} stars:>={self.config.MIN_STARS}"
+                # 优先搜索最近30天有更新的仓库，降低星标要求
+                min_stars = max(10, self.config.MIN_STARS // 2)  # 降低星标要求
+                query = f"{keyword} {recent_updated_filter} stars:>={min_stars}"
                 
                 params = {
                     "q": query,
@@ -135,10 +145,10 @@ class OptimizedHighFrequencyCollector:
                         items = data.get("items", [])
                         repos.extend(items)
                         
-                        # 如果最近30天结果不足，搜索最近90天
-                        if len(items) < per_keyword * 0.5:  # 如果结果少于预期的一半
-                            self.logger.info(f"🔍 {keyword} 最近30天结果不足，搜索最近90天")
-                            extended_query = f"{keyword} {extended_updated_filter} stars:>={self.config.MIN_STARS}"
+                        # 分层搜索策略：如果结果不足，逐步放宽条件
+                        if len(items) < per_keyword * 0.3:  # 如果结果少于预期的30%
+                            self.logger.info(f"🔍 {keyword} 最近30天结果不足({len(items)}个)，搜索最近90天")
+                            extended_query = f"{keyword} {extended_updated_filter} stars:>={min_stars}"
                             extended_params = {
                                 "q": extended_query,
                                 "sort": "updated",
@@ -154,7 +164,28 @@ class OptimizedHighFrequencyCollector:
                                     extended_data = await extended_response.json()
                                     extended_items = extended_data.get("items", [])
                                     repos.extend(extended_items)
-                                    self.logger.info(f"✅ {keyword} 扩展搜索获得 {len(extended_items)} 个仓库")
+                                    self.logger.info(f"✅ {keyword} 90天搜索获得 {len(extended_items)} 个仓库")
+                                    
+                                    # 如果90天结果仍然不足，搜索最近1年
+                                    if len(items) + len(extended_items) < per_keyword * 0.5:
+                                        self.logger.info(f"🔍 {keyword} 90天结果仍不足，搜索最近1年")
+                                        fallback_query = f"{keyword} {fallback_updated_filter} stars:>={min_stars}"
+                                        fallback_params = {
+                                            "q": fallback_query,
+                                            "sort": "updated",
+                                            "order": "desc",
+                                            "per_page": min(100, per_keyword - len(items) - len(extended_items))
+                                        }
+                                        
+                                        async with self.session.get(
+                                            APIConfig.GITHUB_SEARCH_ENDPOINT,
+                                            params=fallback_params
+                                        ) as fallback_response:
+                                            if fallback_response.status == 200:
+                                                fallback_data = await fallback_response.json()
+                                                fallback_items = fallback_data.get("items", [])
+                                                repos.extend(fallback_items)
+                                                self.logger.info(f"✅ {keyword} 1年搜索获得 {len(fallback_items)} 个仓库")
                                     
                     elif response.status == 403:
                         self.logger.warning(f"⚠️ API限频: {keyword}")
@@ -166,6 +197,57 @@ class OptimizedHighFrequencyCollector:
                 self.logger.error(f"❌ 搜索失败 {keyword}: {e}")
                 
         return repos
+    
+    async def _backup_search_strategy(self) -> List[Dict[str, Any]]:
+        """备用搜索策略 - 使用更宽松的条件"""
+        self.logger.info("🔄 执行备用搜索策略")
+        backup_repos = []
+        
+        # 使用更宽松的搜索条件
+        backup_keywords = [
+            "machine learning", "deep learning", "neural network", 
+            "artificial intelligence", "AI", "ML", "pytorch", "tensorflow"
+        ]
+        
+        for keyword in backup_keywords[:3]:  # 只使用前3个关键词
+            try:
+                # 使用更宽松的时间范围和星标要求
+                query = f"{keyword} stars:>=10 created:>2020-01-01"
+                
+                params = {
+                    "q": query,
+                    "sort": "stars",
+                    "order": "desc",
+                    "per_page": 50
+                }
+                
+                from config_v2 import APIConfig
+                async with self.session.get(
+                    APIConfig.GITHUB_SEARCH_ENDPOINT,
+                    params=params
+                ) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        items = data.get("items", [])
+                        backup_repos.extend(items)
+                        self.logger.info(f"✅ 备用搜索 {keyword}: {len(items)} 个仓库")
+                    elif response.status == 403:
+                        self.logger.warning(f"⚠️ 备用搜索API限频: {keyword}")
+                        await asyncio.sleep(5)
+                    else:
+                        self.logger.error(f"❌ 备用搜索API错误 {keyword}: {response.status}")
+                        
+            except Exception as e:
+                self.logger.error(f"❌ 备用搜索失败 {keyword}: {e}")
+        
+        # 去重
+        unique_backup = {}
+        for repo in backup_repos:
+            repo_id = repo.get('id')
+            if repo_id and repo_id not in unique_backup:
+                unique_backup[repo_id] = repo
+        
+        return list(unique_backup.values())
     
     async def process_repositories(self, repos: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """处理仓库数据 - 使用增强版处理器确保watchers_count正确"""
@@ -286,8 +368,16 @@ class OptimizedHighFrequencyCollector:
             self.logger.info(f"🆕 新增仓库: {stats['new']}")
             self.logger.info(f"🔄 更新仓库: {stats['updated']}")
             self.logger.info(f"⏭️ 跳过仓库: {stats['skipped']}")
-            self.logger.info(f"📈 新增率: {stats['new']/stats['total_processed']*100:.1f}%")
-            self.logger.info(f"📈 更新率: {stats['updated']/stats['total_processed']*100:.1f}%")
+            # 安全计算比率，避免除零错误
+            total_processed = stats['total_processed']
+            if total_processed > 0:
+                new_rate = stats['new']/total_processed*100
+                update_rate = stats['updated']/total_processed*100
+                self.logger.info(f"📈 新增率: {new_rate:.1f}%")
+                self.logger.info(f"📈 更新率: {update_rate:.1f}%")
+            else:
+                self.logger.info(f"📈 新增率: 0.0% (无处理数据)")
+                self.logger.info(f"📈 更新率: 0.0% (无处理数据)")
             self.logger.info(f"⏱️ 采集耗时: {duration:.1f}分钟")
             self.logger.info(f"🚀 平均速度: {len(processed_repos)/duration:.1f}项/分钟")
             
@@ -305,11 +395,17 @@ class OptimizedHighFrequencyCollector:
         except Exception as e:
             self.logger.error(f"❌ 采集过程中发生错误: {e}")
             # 发送失败通知邮件
-            self.email_notifier.send_failure_notification(str(e))
+            try:
+                self.email_notifier.send_failure_notification(str(e))
+            except Exception as email_error:
+                self.logger.error(f"❌ 发送失败通知邮件失败: {email_error}")
             raise
         finally:
             if self.session:
-                await self.session.close()
+                try:
+                    await self.session.close()
+                except Exception as close_error:
+                    self.logger.error(f"❌ 关闭HTTP会话失败: {close_error}")
 
 async def main():
     """主函数"""
