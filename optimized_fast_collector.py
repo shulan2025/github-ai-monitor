@@ -102,20 +102,25 @@ class OptimizedHighFrequencyCollector:
         return final_repos
     
     async def _search_round(self, keywords: List[str], target_count: int) -> List[Dict[str, Any]]:
-        """执行单轮搜索"""
+        """执行单轮搜索 - 优化为发现新仓库"""
         repos = []
         per_keyword = max(1, target_count // len(keywords))
         
         for keyword in keywords:
             try:
-                # 使用更宽松的时间过滤器 - 只使用创建时间过滤
-                created_filter = "created:>2015-01-01"  # 放宽到10年前
-                # 移除updated过滤器，因为它太严格了
-                query = f"{keyword} {created_filter} stars:>={self.config.MIN_STARS}"
+                # 动态时间过滤器 - 优先发现新仓库
+                from datetime import datetime, timedelta
+                # 主要搜索最近30天的新仓库
+                recent_filter = "created:>" + (datetime.now() - timedelta(days=30)).strftime('%Y-%m-%d')
+                # 辅助搜索最近90天的仓库
+                extended_filter = "created:>" + (datetime.now() - timedelta(days=90)).strftime('%Y-%m-%d')
+                
+                # 优先搜索最近30天的新仓库
+                query = f"{keyword} {recent_filter} stars:>={self.config.MIN_STARS}"
                 
                 params = {
                     "q": query,
-                    "sort": "stars", 
+                    "sort": "created",  # 按创建时间排序，优先新仓库
                     "order": "desc",
                     "per_page": min(100, per_keyword)
                 }
@@ -129,6 +134,28 @@ class OptimizedHighFrequencyCollector:
                         data = await response.json()
                         items = data.get("items", [])
                         repos.extend(items)
+                        
+                        # 如果最近30天结果不足，搜索最近90天
+                        if len(items) < per_keyword * 0.5:  # 如果结果少于预期的一半
+                            self.logger.info(f"🔍 {keyword} 最近30天结果不足，搜索最近90天")
+                            extended_query = f"{keyword} {extended_filter} stars:>={self.config.MIN_STARS}"
+                            extended_params = {
+                                "q": extended_query,
+                                "sort": "created",
+                                "order": "desc", 
+                                "per_page": min(100, per_keyword - len(items))
+                            }
+                            
+                            async with self.session.get(
+                                APIConfig.GITHUB_SEARCH_ENDPOINT,
+                                params=extended_params
+                            ) as extended_response:
+                                if extended_response.status == 200:
+                                    extended_data = await extended_response.json()
+                                    extended_items = extended_data.get("items", [])
+                                    repos.extend(extended_items)
+                                    self.logger.info(f"✅ {keyword} 扩展搜索获得 {len(extended_items)} 个仓库")
+                                    
                     elif response.status == 403:
                         self.logger.warning(f"⚠️ API限频: {keyword}")
                         await asyncio.sleep(10)
@@ -154,12 +181,14 @@ class OptimizedHighFrequencyCollector:
         """存储仓库数据 - 批量优化"""
         self.logger.info(f"💾 开始存储 {len(repos)} 个仓库到数据库")
         
-        stats = {"new": 0, "updated": 0, "skipped": 0}
+        stats = {"new": 0, "updated": 0, "skipped": 0, "total_processed": 0}
         
         # 批量处理以提升性能
         with tqdm(repos, desc="存储仓库数据", disable=False, mininterval=2.0) as pbar:
             for repo in pbar:
                 try:
+                    stats["total_processed"] += 1
+                    
                     # 检查去重逻辑
                     should_store, reason = await self.dedup_manager.should_store_repository(repo)
                     
@@ -170,6 +199,7 @@ class OptimizedHighFrequencyCollector:
                         if success:
                             if "新项目" in reason:
                                 stats["new"] += 1
+                                self.logger.info(f"✅ 新增仓库: {repo.full_name}")
                             else:
                                 stats["updated"] += 1
                         else:
@@ -247,11 +277,13 @@ class OptimizedHighFrequencyCollector:
             duration = (end_time - start_time).total_seconds() / 60
             
             self.logger.info("\n" + "="*50)
-            self.logger.info("✅ 优化版采集完成!")
+            self.logger.info("✅ 新仓库发现采集完成!")
             self.logger.info("="*50)
-            self.logger.info(f"📊 总采集数量: {len(processed_repos)}")
-            self.logger.info(f"🆕 新增项目: {stats['new']}")
-            self.logger.info(f"🔄 更新项目: {stats['updated']}")
+            self.logger.info(f"📊 总搜索数量: {len(processed_repos)}")
+            self.logger.info(f"🆕 新增仓库: {stats['new']}")
+            self.logger.info(f"🔄 更新仓库: {stats['updated']}")
+            self.logger.info(f"⏭️ 跳过仓库: {stats['skipped']}")
+            self.logger.info(f"📈 新增率: {stats['new']/stats['total_processed']*100:.1f}%")
             self.logger.info(f"⏱️ 采集耗时: {duration:.1f}分钟")
             self.logger.info(f"🚀 平均速度: {len(processed_repos)/duration:.1f}项/分钟")
             

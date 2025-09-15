@@ -25,7 +25,7 @@ class DeduplicationManager:
     
     async def should_store_repository(self, repo: RepositoryData) -> Tuple[bool, str]:
         """
-        判断是否应该存储仓库
+        判断是否应该存储仓库 - 优化为只存储新仓库
         返回: (是否存储, 原因说明)
         """
         try:
@@ -36,13 +36,13 @@ class DeduplicationManager:
                 # 新项目直接收录
                 return True, "新项目"
             
-            # 去除智能去重规则 - 直接更新现有记录
-            return True, "更新现有记录"
+            # 只存储新仓库，不更新现有记录
+            return False, "仓库已存在，跳过存储"
             
         except Exception as e:
             self.logger.error(f"去重检查失败: {repo.full_name} | {e}")
-            # 出错时默认存储，确保数据完整性
-            return True, f"去重检查异常，强制存储: {e}"
+            # 出错时默认不存储，避免重复数据
+            return False, f"去重检查异常，跳过存储: {e}"
     
     async def get_existing_record(self, repo_id: str) -> Optional[Dict[str, Any]]:
         """获取已存在的仓库记录"""
