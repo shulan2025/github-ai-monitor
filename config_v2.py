@@ -166,7 +166,7 @@ def validate_config() -> bool:
             return False
     
     print("✅ 配置验证通过")
-        return True
+    return True
 
 if __name__ == "__main__":
     # 测试配置
